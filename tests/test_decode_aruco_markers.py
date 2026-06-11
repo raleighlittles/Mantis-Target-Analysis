@@ -29,6 +29,7 @@ class TestDecodeArucoMarkers(unittest.TestCase):
             self.skipTest("OpenCV not available")
         with tempfile.TemporaryDirectory() as tmp_dir:
             image_path = Path(tmp_dir) / "fake.jpg"
+            image_path.write_bytes(b"")
             with patch.object(decode_aruco_markers.cv2, "imread", return_value=None):
                 results = decode_aruco_markers.decode_images([image_path], "4X4_50")
             self.assertEqual(results, {str(image_path): []})

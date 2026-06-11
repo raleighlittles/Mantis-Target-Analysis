@@ -39,11 +39,13 @@ def detect_markers(image, dictionary_name: str) -> List[int]:
     if cv2 is None or not hasattr(cv2, "aruco"):
         raise RuntimeError("OpenCV ArUco module is not available in this environment.")
 
-    dictionary_attr = f"DICT_{dictionary_name}"
-    if not hasattr(cv2.aruco, dictionary_attr):
+    dictionary_constant_name = f"DICT_{dictionary_name}"
+    if not hasattr(cv2.aruco, dictionary_constant_name):
         raise ValueError(f"Unknown ArUco dictionary: {dictionary_name}")
 
-    dictionary = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, dictionary_attr))
+    dictionary = cv2.aruco.getPredefinedDictionary(
+        getattr(cv2.aruco, dictionary_constant_name)
+    )
     if hasattr(cv2.aruco, "ArucoDetector"):
         detector = cv2.aruco.ArucoDetector(dictionary, cv2.aruco.DetectorParameters())
         _, ids, _ = detector.detectMarkers(image)
