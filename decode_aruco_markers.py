@@ -16,10 +16,8 @@ import cv2
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
 
 
-# Search order matters.
-#
 # Smaller dictionaries are listed before larger dictionaries, so if a marker
-# matches DICT_4X4_50 and also DICT_4X4_100, the 4X4_50 result wins.
+# matches DICT_4X4_50 and also DICT_4X4_100, the 4X4_50 result wins, since Aruco dictionaries are supersets
 ARUCO_DICTIONARY_NAMES = [
     "4X4_50",
     "4X4_100",
@@ -362,6 +360,168 @@ def marker_bounding_box(corners: List[List[float]]) -> Dict[str, float]:
         "center_y": (y_min + y_max) / 2.0,
     }
 
+def clamp_int(value: float, minimum: int, maximum: int) -> int:
+    return max(minimum, min(maximum, int(round(value))))
+
+
+def annotated_output_path(image_path: Path) -> Path:
+    return image_path.with_name(f"{image_path.stem}_annotated{image_path.suffix}")
+
+
+def annotate_detected_markers(
+    image_path: Path,
+    detections: List[Dict[str, Any]],
+    box_thickness: int = 5,
+) -> Optional[Path]:
+    """
+    Create an annotated copy of image_path showing detected ArUco markers.
+
+    This does not modify the original image.
+
+    The annotation includes:
+      - a rectangle around the marker bounding box
+      - marker ID
+      - ArUco dictionary name
+
+    For markers in the top half of the image, the label is drawn below.
+    For markers in the bottom half of the image, the label is drawn above.
+
+    Returns the output path if an annotated image was written, otherwise None.
+    """
+    if not detections:
+        return None
+
+    image = cv2.imread(str(image_path))
+    if image is None:
+        return None
+
+    annotated = image.copy()
+    image_height, image_width = annotated.shape[:2]
+
+    box_color = (0, 255, 0)
+    text_color = (255, 255, 255)
+    label_background_color = (0, 0, 0)
+
+    font_face = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.75
+    text_thickness = 2
+    label_padding = 8
+    label_gap = 8
+
+    drew_anything = False
+
+    for detection in detections:
+        bounding_box = detection.get("bounding_box")
+        if not bounding_box:
+            continue
+
+        x_min = clamp_int(bounding_box["x_min"], 0, image_width - 1)
+        y_min = clamp_int(bounding_box["y_min"], 0, image_height - 1)
+        x_max = clamp_int(bounding_box["x_max"], 0, image_width - 1)
+        y_max = clamp_int(bounding_box["y_max"], 0, image_height - 1)
+
+        center_y = float(
+            bounding_box.get(
+                "center_y",
+                (bounding_box["y_min"] + bounding_box["y_max"]) / 2.0,
+            )
+        )
+
+        marker_id = detection.get("id", "?")
+        dictionary = detection.get("dictionary", "?")
+        label_text = f"ID {marker_id} | {dictionary}"
+
+        # Draw the marker box.
+        cv2.rectangle(
+            annotated,
+            (x_min, y_min),
+            (x_max, y_max),
+            box_color,
+            box_thickness,
+        )
+
+        text_size, baseline = cv2.getTextSize(
+            label_text,
+            font_face,
+            font_scale,
+            text_thickness,
+        )
+
+        text_width, text_height = text_size
+
+        label_width = text_width + (2 * label_padding)
+        label_height = text_height + baseline + (2 * label_padding)
+
+        # Keep the label horizontally inside the image.
+        label_x_min = clamp_int(
+            x_min,
+            0,
+            max(0, image_width - label_width),
+        )
+        label_x_max = label_x_min + label_width
+
+        marker_is_in_bottom_half = center_y >= (image_height / 2.0)
+
+        if marker_is_in_bottom_half:
+            # Put label above the marker.
+            label_y_min = y_min - label_gap - label_height
+
+            # If it would go off the top edge, fall back to below.
+            if label_y_min < 0:
+                label_y_min = y_max + label_gap
+        else:
+            # Put label below the marker.
+            label_y_min = y_max + label_gap
+
+            # If it would go off the bottom edge, fall back to above.
+            if label_y_min + label_height > image_height:
+                label_y_min = y_min - label_gap - label_height
+
+        # Final clamp so the label always stays visible.
+        label_y_min = clamp_int(
+            label_y_min,
+            0,
+            max(0, image_height - label_height),
+        )
+        label_y_max = label_y_min + label_height
+
+        # Draw label background.
+        cv2.rectangle(
+            annotated,
+            (label_x_min, label_y_min),
+            (label_x_max, label_y_max),
+            label_background_color,
+            thickness=-1,
+        )
+
+        # Draw label text.
+        text_origin = (
+            label_x_min + label_padding,
+            label_y_min + label_padding + text_height,
+        )
+
+        cv2.putText(
+            annotated,
+            label_text,
+            text_origin,
+            font_face,
+            font_scale,
+            text_color,
+            text_thickness,
+            cv2.LINE_AA,
+        )
+
+        drew_anything = True
+
+    if not drew_anything:
+        return None
+
+    output_path = annotated_output_path(image_path)
+
+    if not cv2.imwrite(str(output_path), annotated):
+        raise RuntimeError(f"Failed to write annotated image: {output_path}")
+
+    return output_path
 
 def main() -> int:
     parser = build_parser()
@@ -377,6 +537,13 @@ def main() -> int:
         args.dictionary,
         include_corners=args.include_corners,
     )
+
+    for image_path in image_paths:
+        annotate_detected_markers(
+            image_path=image_path,
+            detections=results.get(str(image_path), []),
+            box_thickness=5,
+        )
 
     json_kwargs = {"indent": 2} if args.pretty else {}
     print(json.dumps(results, **json_kwargs))
