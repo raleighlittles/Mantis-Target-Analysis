@@ -8,10 +8,7 @@ import json
 from pathlib import Path
 from typing import Dict, Iterable, List
 
-try:
-    import cv2
-except ImportError:  # pragma: no cover - depends on environment setup
-    cv2 = None
+import cv2
 
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
