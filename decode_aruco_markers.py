@@ -46,14 +46,13 @@ def detect_markers(image, dictionary_name: str) -> List[int]:
     dictionary = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, dictionary_attr))
     if hasattr(cv2.aruco, "ArucoDetector"):
         detector = cv2.aruco.ArucoDetector(dictionary, cv2.aruco.DetectorParameters())
-        corners, ids, _ = detector.detectMarkers(image)
+        _, ids, _ = detector.detectMarkers(image)
     else:
-        corners, ids, _ = cv2.aruco.detectMarkers(
+        _, ids, _ = cv2.aruco.detectMarkers(
             image,
             dictionary,
             parameters=cv2.aruco.DetectorParameters_create(),
         )
-    _ = corners
     return _flatten_ids(ids)
 
 
